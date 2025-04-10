@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Guest Book Entries</title>
+    <style>
+        body { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .entry { border-bottom: 1px solid #ccc; padding: 10px 0; }
+        .controls { margin-bottom: 20px; }
+        .photo-upload { margin-top: 10px; }
+        .entry img { max-width: 200px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Guest Book Entries</h1>
+    <div class="controls">
+        <input type="text" id="search" placeholder="Search entries...">
+        <input type="date" id="startDate"> to 
+        <input type="date" id="endDate">
+        <button onclick="searchEntries()">Search</button>
+    </div>
+    <div id="entries"></div>
+    <p><a href="/">Add new entry</a></p>
+    <script>
+        function searchEntries() {
+            const query = document.getElementById('search').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            fetch(`/api/entries/search?query=${query}&startDate=${startDate}&endDate=${endDate}`)
+                .then(response => response.json())
+                .then(displayEntries);
+        }
+
+        function displayEntries(entries) {
+            const container = document.getElementById('entries');
+            container.innerHTML = '';
+            entries.forEach(entry => {
+                const div = document.createElement('div');
+                div.className = 'entry';
+                div.innerHTML = `
+                    <h3>${entry.name} from ${entry.from}</h3>
+                    <p>${entry.comments}</p>
+                    ${entry.photo ? `<img src="${entry.photo}" alt="Entry photo">` : ''}
+                    <small>${new Date(entry.date).toLocaleDateString()}</small>
+                    <div class="photo-upload">
+                        <input type="file" onchange="uploadPhoto('${entry._id}', this.files[0])">
+                    </div>
+                    <button onclick="deleteEntry('${entry._id}')">Delete Entry</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function uploadPhoto(entryId, file) {
+            const formData = new FormData();
+            formData.append('photo', file);
+            
+            fetch(`/api/entries/${entryId}/photo`, {
+                method: 'POST',
+                body: formData
+            }).then(() => location.reload());
+        }
+
+        function deleteEntry(id) {
+            if (confirm('Are you sure you want to delete this entry?')) {
+                fetch(`/api/entries/${id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                }).then(() => location.reload());
+            }
+        }
+
+        // Initial load
+        searchEntries();
+    </script>
+</body>
+</html>

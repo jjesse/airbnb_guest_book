@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Airbnb Guest Book</title>
+    <style>
+        body { max-width: 600px; margin: 0 auto; padding: 20px; }
+        form { display: flex; flex-direction: column; gap: 10px; }
+        textarea { height: 100px; }
+    </style>
+</head>
+<body>
+    <h1>Welcome to our Airbnb!</h1>
+    <form action="/submit" method="POST">
+        <input type="hidden" name="_csrf" id="csrfToken">
+        <input type="text" name="name" placeholder="Your Name" required>
+        <input type="text" name="from" placeholder="Visiting From" required>
+        <textarea name="comments" placeholder="Leave your comments..." required></textarea>
+        <button type="submit">Submit</button>
+    </form>
+    <p><a href="/entries">View all entries</a></p>
+    <script>
+        fetch('/api/csrf-token')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('csrfToken').value = data.csrfToken;
+            });
+    </script>
+</body>
+</html>

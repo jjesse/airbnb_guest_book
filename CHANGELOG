@@ -1,0 +1,76 @@
+# Changelog
+
+## [0.3.1] - 2025-04-10
+
+### Added
+
+- Upload directory persistence in Docker
+- Automatic upload directory creation
+- File permissions for uploads in Docker
+
+## [0.3.0] - 2025-04-10
+
+### Added
+
+- Entry deletion with confirmation
+- Photo upload support
+- Date range filtering
+- Search functionality
+- Email notifications for new entries
+- Enhanced UI for new features
+
+## [0.2.3] - 2025-04-10
+
+### Added
+
+- Host authentication using JWT
+- CSRF protection for forms
+- Rate limiting for API endpoints
+- Protected entry deletion endpoint
+- Security middleware
+
+## [0.2.2] - 2025-04-10
+
+### Added
+
+- MongoDB backup and restore functionality
+- Backup script with scheduled backup support
+- Backup/restore API endpoints
+- Documentation for backup features
+
+## [0.2.1] - 2025-04-10
+
+### Security
+
+- Updated Node.js base image to 20-alpine3.19
+- Added non-root user execution
+- Implemented Docker security hardening
+
+## [0.2.0] - 2025-04-10
+
+### Added
+
+- MongoDB integration for data persistence
+- Docker Compose configuration
+- Database models and schemas
+- Updated documentation for MongoDB setup
+
+## [0.1.0] - 2025-04-10
+
+### Added
+
+- Initial project setup
+- Basic Express.js server
+- Docker configuration
+- Guest book form (Name, Visiting From, Comments)
+- Comments display page
+- Basic README documentation
+
+## [Planned Improvements]
+
+- Database integration for data persistence
+- Authentication system
+- Enhanced UI/UX features
+- Security improvements
+- Testing infrastructure
+- Development workflow optimizations
