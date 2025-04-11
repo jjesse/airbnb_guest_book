@@ -2,6 +2,8 @@
 <html>
 <head>
     <title>Airbnb Guest Book</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/styles.css">
     <style>
         body { max-width: 600px; margin: 0 auto; padding: 20px; }
         form { display: flex; flex-direction: column; gap: 10px; }
@@ -10,20 +12,119 @@
 </head>
 <body>
     <h1>Welcome to our Airbnb!</h1>
-    <form action="/submit" method="POST">
+    <div class="success-message" id="successMessage">Entry submitted successfully!</div>
+    <form id="guestForm" onsubmit="submitForm(event)">
         <input type="hidden" name="_csrf" id="csrfToken">
-        <input type="text" name="name" placeholder="Your Name" required>
-        <input type="text" name="from" placeholder="Visiting From" required>
-        <textarea name="comments" placeholder="Leave your comments..." required></textarea>
-        <button type="submit">Submit</button>
+        
+        <div class="form-group">
+            <input type="text" name="name" id="name" placeholder="Your Name" required
+                   pattern="[A-Za-z\s]{2,50}" title="2-50 characters, letters only">
+            <span class="error-message" id="nameError">Please enter a valid name</span>
+        </div>
+
+        <div class="form-group">
+            <input type="text" name="from" id="from" placeholder="Visiting From" required
+                   minlength="2" maxlength="100">
+            <span class="error-message" id="fromError">Please enter a valid location</span>
+        </div>
+
+        <div class="form-group">
+            <label for="checkIn">Check In Date:</label>
+            <input type="date" name="checkIn" id="checkIn" required>
+            <span class="error-message" id="checkInError">Please select a check-in date</span>
+        </div>
+
+        <div class="form-group">
+            <label for="checkOut">Check Out Date:</label>
+            <input type="date" name="checkOut" id="checkOut" required>
+            <span class="error-message" id="checkOutError">Please select a check-out date</span>
+        </div>
+
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" name="isRepeatGuest" id="isRepeatGuest">
+                I have stayed here before
+            </label>
+        </div>
+
+        <div class="form-group">
+            <textarea name="comments" id="comments" placeholder="Leave your comments..." 
+                      required minlength="10"></textarea>
+            <span class="error-message" id="commentsError">Comment must be at least 10 characters</span>
+        </div>
+
+        <button type="submit">
+            <span>Submit</span>
+            <div class="spinner"></div>
+        </button>
     </form>
     <p><a href="/entries">View all entries</a></p>
     <script>
+        async function submitForm(event) {
+            event.preventDefault();
+            const form = event.target;
+            const submitButton = form.querySelector('button');
+            const spinner = form.querySelector('.spinner');
+            
+            // Reset error states
+            document.querySelectorAll('.error-message').forEach(el => el.style.display = 'none');
+            document.getElementById('successMessage').style.display = 'none';
+
+            // Validate form
+            let isValid = form.checkValidity();
+            if (!isValid) {
+                form.reportValidity();
+                return;
+            }
+
+            // Show loading state
+            submitButton.classList.add('loading');
+            spinner.style.display = 'block';
+
+            try {
+                const response = await fetch('/submit', {
+                    method: 'POST',
+                    body: new FormData(form)
+                });
+
+                if (response.ok) {
+                    document.getElementById('successMessage').style.display = 'block';
+                    form.reset();
+                    setTimeout(() => {
+                        window.location.href = '/entries';
+                    }, 2000);
+                } else {
+                    throw new Error('Submission failed');
+                }
+            } catch (error) {
+                document.getElementById('commentsError').textContent = 'Failed to submit entry';
+                document.getElementById('commentsError').style.display = 'block';
+            } finally {
+                submitButton.classList.remove('loading');
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Fetch CSRF token
         fetch('/api/csrf-token')
             .then(response => response.json())
             .then(data => {
                 document.getElementById('csrfToken').value = data.csrfToken;
             });
+
+        // Add date validation
+        document.getElementById('checkOut').addEventListener('change', function() {
+            const checkIn = new Date(document.getElementById('checkIn').value);
+            const checkOut = new Date(this.value);
+            
+            if (checkOut <= checkIn) {
+                document.getElementById('checkOutError').textContent = 'Check-out must be after check-in';
+                document.getElementById('checkOutError').style.display = 'block';
+                this.value = '';
+            } else {
+                document.getElementById('checkOutError').style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

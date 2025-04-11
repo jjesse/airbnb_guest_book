@@ -1,5 +1,118 @@
 # Changelog
 
+## [0.6.4] - 2025-04-11
+
+### Added
+
+- Repeat guest tracking functionality
+- Repeat guest indicator in entry display
+- Updated guest form with repeat guest checkbox
+
+## [0.6.3] - 2025-04-11
+
+### Added
+
+- Check-in/out date selection for entries
+- Automatic stay duration calculation
+- Date validation for check-in/out
+- Duration display in entry list
+
+## [0.6.2] - 2025-04-11
+
+### Security
+
+- Added file upload validation
+- Implemented security headers with helmet
+- Enhanced error handling
+- Added file size limits
+- Added MIME type verification
+
+## [0.6.1] - 2025-04-11
+
+### Security
+
+- Enhanced input sanitization with:
+  - XSS protection
+  - Null byte removal
+  - Unicode normalization
+  - Control character filtering
+  - Input size limits
+  - String trimming
+
+## [0.6.0] - 2025-04-11
+
+### Added
+
+- Comprehensive API documentation
+- Developer setup guide
+- Contributing guidelines
+- Documentation section in README
+
+## [0.5.4] - 2025-04-11
+
+### Changed
+
+- Updated Node.js base image to 20.19.0-alpine for improved stability
+
+## [0.5.3] - 2025-04-11
+
+### Security
+
+- Updated to Node.js 20.11.1-alpine3.19-slim base image
+- Added Trivy vulnerability scanner during build
+- Implemented strict security patches and updates
+- Added CVE-2023-46809 security revert
+- Enhanced system security configurations
+- Reduced container attack surface
+
+## [0.5.2] - 2025-04-11
+
+### Security
+
+- Updated Node.js base image to 20.11-alpine3.19
+- Added container security hardening with dumb-init
+- Implemented strict npm security auditing
+- Added automatic security upgrades for Alpine packages
+
+## [0.5.1] - 2025-04-11
+
+### Changed
+
+- Optimized TypeScript build process in Dockerfile
+- Improved Docker volume configurations for better data persistence
+- Updated package.json scripts for TypeScript support
+- Enhanced Docker container security settings
+- Fixed uploads directory permissions
+- Added container restart policies
+
+## [0.5.0] - 2025-04-10
+
+### Added
+
+- TypeScript support with configuration
+- Jest testing framework with initial tests
+- Environment variables configuration
+- Input sanitization using XSS
+- Development workflow improvements
+
+## [0.4.1] - 2025-04-10
+
+### Changed
+
+- Marked UI/UX improvements as complete in documentation
+- Verified all UI/UX features working
+
+## [0.4.0] - 2025-04-10
+
+### Added
+
+- Form validation with error messages
+- Loading states and spinners
+- Success messages
+- Mobile-responsive design
+- Dark mode support
+- New CSS architecture
+
 ## [0.3.1] - 2025-04-10
 
 ### Added
@@ -67,6 +180,15 @@
 - Basic README documentation
 
 ## [Planned Improvements]
+
+### Future Updates
+
+- Monitoring & Logging system
+- CI/CD Pipeline implementation
+- Performance optimizations
+- Accessibility improvements
+- Internationalization support
+- Analytics & Reporting features
 
 - Database integration for data persistence
 - Authentication system
