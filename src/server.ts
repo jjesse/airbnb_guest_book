@@ -53,6 +53,13 @@ interface AuthRequest extends Request {
   user?: { username: string };
 }
 
+interface MonthOccupancy {
+  month: string;
+  bookedDays: number;
+  daysInMonth: number;
+  occupancyRate: number;
+}
+
 // MongoDB Setup
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/guestbook';
 if (!isTest) {
@@ -84,6 +91,66 @@ entrySchema.pre('save', function(next) {
 });
 
 const Entry = mongoose.model<IEntry>('Entry', entrySchema);
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+const normalizeToUtcDate = (date: Date): Date => (
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+);
+
+const getStayDuration = (entry: Pick<IEntry, 'duration' | 'checkIn' | 'checkOut'>): number => {
+  if (typeof entry.duration === 'number' && entry.duration > 0) {
+    return entry.duration;
+  }
+
+  const checkIn = normalizeToUtcDate(new Date(entry.checkIn));
+  const checkOut = normalizeToUtcDate(new Date(entry.checkOut));
+  const diff = Math.ceil((checkOut.getTime() - checkIn.getTime()) / MS_PER_DAY);
+
+  return Math.max(diff, 0);
+};
+
+const buildOccupancyByMonth = (entries: Pick<IEntry, 'checkIn' | 'checkOut'>[]): MonthOccupancy[] => {
+  const monthDayMap = new Map<string, number>();
+
+  entries.forEach((entry) => {
+    const checkIn = normalizeToUtcDate(new Date(entry.checkIn));
+    const checkOut = normalizeToUtcDate(new Date(entry.checkOut));
+
+    if (checkOut <= checkIn) {
+      return;
+    }
+
+    let currentMonth = new Date(Date.UTC(checkIn.getUTCFullYear(), checkIn.getUTCMonth(), 1));
+
+    while (currentMonth < checkOut) {
+      const nextMonth = new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() + 1, 1));
+      const overlapStart = checkIn > currentMonth ? checkIn : currentMonth;
+      const overlapEnd = checkOut < nextMonth ? checkOut : nextMonth;
+      const overlapDays = Math.max(
+        0,
+        Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / MS_PER_DAY)
+      );
+
+      if (overlapDays > 0) {
+        const monthKey = `${currentMonth.getUTCFullYear()}-${String(currentMonth.getUTCMonth() + 1).padStart(2, '0')}`;
+        monthDayMap.set(monthKey, (monthDayMap.get(monthKey) || 0) + overlapDays);
+      }
+
+      currentMonth = nextMonth;
+    }
+  });
+
+  return Array.from(monthDayMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, bookedDays]) => {
+      const [year, monthNumber] = month.split('-').map(Number);
+      const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+      const occupancyRate = Number(((bookedDays / daysInMonth) * 100).toFixed(2));
+
+      return { month, bookedDays, daysInMonth, occupancyRate };
+    });
+};
 
 // Express Setup
 const app = express();
@@ -266,6 +333,50 @@ app.get('/api/entries', async (req: Request, res: Response, next: NextFunction) 
   }
 });
 
+app.get('/api/entries/export', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const format = String(req.query.format || 'json').toLowerCase();
+    const entries = await Entry.find().sort('-date');
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'csv') {
+      const escapeCsv = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const headers = ['name', 'from', 'comments', 'checkIn', 'checkOut', 'duration', 'isRepeatGuest', 'date'];
+      const rows = entries.map((entry) => [
+        entry.name,
+        entry.from,
+        entry.comments,
+        entry.checkIn ? new Date(entry.checkIn).toISOString().slice(0, 10) : '',
+        entry.checkOut ? new Date(entry.checkOut).toISOString().slice(0, 10) : '',
+        getStayDuration(entry),
+        entry.isRepeatGuest,
+        entry.date ? new Date(entry.date).toISOString() : ''
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row) => row.map((cell) => escapeCsv(cell)).join(','))
+      ].join('\n');
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="guest-entries-${timestamp}.csv"`);
+      res.send(csvContent);
+      return;
+    }
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="guest-entries-${timestamp}.json"`);
+      res.send(JSON.stringify(entries, null, 2));
+      return;
+    }
+
+    res.status(400).json({ error: 'Invalid format. Use format=csv or format=json' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Search must be registered before the /:id routes to avoid being shadowed
 app.get('/api/entries/search', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -380,6 +491,59 @@ app.post('/api/restore/:filename', authMiddleware, async (req: AuthRequest, res:
         next(error);
       } else {
         res.json({ message: 'Restore completed successfully' });
+      }
+    });
+
+    app.get('/api/analytics/dashboard', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const entries = await Entry.find().sort('-date');
+        const totalStays = entries.length;
+        const totalGuests = totalStays;
+        const repeatGuests = entries.filter((entry) => entry.isRepeatGuest).length;
+        const repeatGuestRate = totalStays > 0 ? Number(((repeatGuests / totalStays) * 100).toFixed(2)) : 0;
+        const totalBookedDays = entries.reduce((sum, entry) => sum + getStayDuration(entry), 0);
+        const occupancyByMonth = buildOccupancyByMonth(entries);
+
+        res.json({
+          totalStays,
+          totalGuests,
+          repeatGuestRate,
+          totalBookedDays,
+          occupancyByMonth
+        });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    app.get('/api/analytics/statistics', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const entries = await Entry.find().sort('-date');
+        const totalEntries = entries.length;
+        const totalBookedDays = entries.reduce((sum, entry) => sum + getStayDuration(entry), 0);
+        const averageStayDuration = totalEntries > 0 ? Number((totalBookedDays / totalEntries).toFixed(2)) : 0;
+
+        const cityCounts = new Map<string, number>();
+        entries.forEach((entry) => {
+          const normalizedCity = entry.from.trim();
+          if (!normalizedCity) {
+            return;
+          }
+          cityCounts.set(normalizedCity, (cityCounts.get(normalizedCity) || 0) + 1);
+        });
+
+        const mostCommonOriginCities = Array.from(cityCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([city, count]) => ({ city, count }));
+
+        res.json({
+          averageStayDuration,
+          totalBookedDays,
+          mostCommonOriginCities
+        });
+      } catch (err) {
+        next(err);
       }
     });
   } catch (err) {
