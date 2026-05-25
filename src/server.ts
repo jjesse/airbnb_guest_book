@@ -1,10 +1,11 @@
 import express, { Request, Response, NextFunction } from 'express';
 import xss from 'xss';
+import bcrypt from 'bcryptjs';
 import bodyParser from 'body-parser';
 import mongoose, { Document, Schema } from 'mongoose';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import csrf from 'csurf';
+import { doubleCsrf } from 'csrf-csrf';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -24,6 +25,15 @@ if (!jwtSecret) {
   console.warn('WARNING: JWT_SECRET is not set. Using insecure default — set JWT_SECRET in production.');
 }
 const JWT_SECRET = jwtSecret || 'insecure-dev-secret-do-not-use-in-production';
+
+const csrfSecret = process.env.CSRF_SECRET;
+if (!csrfSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CSRF_SECRET environment variable is required in production');
+  }
+  console.warn('WARNING: CSRF_SECRET is not set. Using insecure default — set CSRF_SECRET in production.');
+}
+const CSRF_SECRET = csrfSecret || 'insecure-dev-csrf-secret-do-not-use-in-production';
 
 // Types
 interface IEntry extends Document {
@@ -76,6 +86,37 @@ const Entry = mongoose.model<IEntry>('Entry', entrySchema);
 const app = express();
 const port = process.env.PORT || 3000;
 
+const {
+  invalidCsrfTokenError,
+  generateCsrfToken,
+  doubleCsrfProtection
+} = doubleCsrf({
+  getSecret: () => CSRF_SECRET,
+  getSessionIdentifier: (req: Request) => `${req.ip}:${req.get('user-agent') ?? 'unknown'}`,
+  cookieName: '__Host-airbnb-guest-book-csrf',
+  cookieOptions: {
+    sameSite: 'strict',
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true
+  },
+  size: 64,
+  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+  getCsrfTokenFromRequest: (req: Request) => {
+    const headerToken = req.headers['x-csrf-token'];
+
+    if (typeof headerToken === 'string') {
+      return headerToken;
+    }
+
+    if (Array.isArray(headerToken)) {
+      return headerToken[0];
+    }
+
+    return typeof req.body?._csrf === 'string' ? req.body._csrf : '';
+  }
+});
+
 // Middleware
 app.use(cookieParser());
 app.use(bodyParser.json());
@@ -89,8 +130,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-const csrfProtection = csrf({ cookie: true });
-app.use(csrfProtection);
+app.use(doubleCsrfProtection);
 
 // Enhanced Input Sanitization
 const sanitizeInput = (req: Request, res: Response, next: NextFunction): void => {
@@ -150,6 +190,26 @@ const upload = multer({
   }
 });
 
+const runBackup = (): void => {
+  const backupDir = path.join(__dirname, '../backups');
+
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `backup-${timestamp}.gz`;
+  const filepath = path.join(backupDir, filename);
+
+  execFile('mongodump', [`--uri=${mongoUri}`, `--archive=${filepath}`, '--gzip'], (error) => {
+    if (error) {
+      console.error('Backup failed:', error);
+    } else {
+      console.log(`Backup created successfully: ${filepath}`);
+    }
+  });
+};
+
 // Auth Middleware
 const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction): void => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -170,6 +230,11 @@ const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction): vo
 
 // Error Handler
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction): void => {
+  if (err === invalidCsrfTokenError || err.message === invalidCsrfTokenError.message) {
+    res.status(403).json({ error: 'Invalid CSRF token' });
+    return;
+  }
+
   console.error(err.stack);
   res.status(500).json({
     error: 'Something went wrong!',
@@ -256,7 +321,7 @@ app.post('/api/entries/:id/photo', upload.single('photo'), async (req: Request, 
   }
 });
 
-app.post('/api/login', (req: Request, res: Response) => {
+app.post('/api/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
   
   if (!process.env.HOST_PASSWORD) {
@@ -264,7 +329,7 @@ app.post('/api/login', (req: Request, res: Response) => {
     return;
   }
 
-  if (username === 'host' && password === process.env.HOST_PASSWORD) {
+  if (username === 'host' && await bcrypt.compare(password, process.env.HOST_PASSWORD)) {
     const token = jwt.sign(
       { username }, 
       JWT_SECRET,
@@ -277,13 +342,12 @@ app.post('/api/login', (req: Request, res: Response) => {
 });
 
 app.get('/api/csrf-token', (req: Request, res: Response) => {
-  res.json({ csrfToken: req.csrfToken() });
+  res.json({ csrfToken: generateCsrfToken(req, res) });
 });
 
 app.post('/api/backup', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { backup } = await import('../scripts/backup');
-    backup();
+    runBackup();
     res.json({ message: 'Backup initiated successfully' });
   } catch (err) {
     next(err);

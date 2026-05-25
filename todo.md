@@ -22,12 +22,12 @@ Last updated: 2026-05-25
 
 ## 🟠 Security Issues
 
-- [ ] **`csurf` package is deprecated** — It has known security vulnerabilities and is no longer maintained. Replace with a maintained CSRF library (e.g., `csrf-csrf` or move to `SameSite` cookie strategy).
-- [ ] **JWT secret falls back to `'secret'`** in `src/server.ts` — If `JWT_SECRET` env var is not set, a trivially guessable secret is used. This should throw/fail at startup instead of silently accepting a weak default.
-- [ ] **No authentication on backup/restore endpoints** — `POST /api/backup` and `POST /api/restore/:filename` are unprotected in both server files. Anyone can trigger a backup or restore.
-- [ ] **Path traversal risk in restore endpoint** — `req.params.filename` is joined directly to the backups path. A `../` payload could escape the backup directory. Validate/sanitize the filename before using it.
-- [ ] **`multer` file upload in `server.js` has no MIME validation** — The root `server.js` upload handler lacks the `fileFilter` present in `src/server.ts`.
-- [ ] **Host password stored as plaintext comparison in `src/server.ts`** — `password === process.env.HOST_PASSWORD` compares in plaintext. The original `server.js` used `bcrypt.compare`. Restore bcrypt hashing in the TypeScript version.
+- [x] **`csurf` package is deprecated** — Replaced with `csrf-csrf` double-submit-cookie protection and kept the `/api/csrf-token` endpoint for the UI.
+- [x] **JWT secret falls back to `'secret'`** in `src/server.ts` — Startup now warns in development and throws in production when `JWT_SECRET` is unset.
+- [x] **No authentication on backup/restore endpoints** — `POST /api/backup` and `POST /api/restore/:filename` now require auth.
+- [x] **Path traversal risk in restore endpoint** — Restore filenames are validated before path usage.
+- [x] **`multer` file upload in `server.js` has no MIME validation** — Legacy `server.js` was removed; the active TypeScript server validates MIME type and size.
+- [x] **Host password stored as plaintext comparison in `src/server.ts`** — Login now uses `bcrypt.compare` against the hashed env var.
 
 ---
 
