@@ -388,8 +388,10 @@ app.post('/api/restore/:filename', authMiddleware, async (req: AuthRequest, res:
 app.use(errorHandler);
 
 // Start server
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+  });
+}
 
 export { app };

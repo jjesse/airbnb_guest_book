@@ -1,7 +1,32 @@
+import bcrypt from 'bcryptjs';
+import type { Express } from 'express';
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
-import { app } from '../server';
+
+jest.setTimeout(30000);
 
 describe('Guest Book API', () => {
+  let app: Express;
+  let mongoServer: MongoMemoryServer;
+
+  beforeAll(async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.CSRF_SECRET = 'test-csrf-secret';
+    process.env.HOST_PASSWORD = await bcrypt.hash('test-password', 10);
+
+    mongoServer = await MongoMemoryServer.create();
+    process.env.MONGODB_URI = mongoServer.getUri();
+
+    ({ app } = await import('../server'));
+  });
+
+  afterAll(async () => {
+    await mongoose.connection.close();
+    await mongoServer.stop();
+  });
+
   const getCsrfContext = async () => {
     const response = await request(app).get('/api/csrf-token');
 

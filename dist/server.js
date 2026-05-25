@@ -102,6 +102,7 @@ exports.app = app;
 const port = process.env.PORT || 3000;
 const { invalidCsrfTokenError, generateCsrfToken, doubleCsrfProtection } = (0, csrf_csrf_1.doubleCsrf)({
     getSecret: () => CSRF_SECRET,
+    getSessionIdentifier: (req) => { var _a; return `${req.ip}:${(_a = req.get('user-agent')) !== null && _a !== void 0 ? _a : 'unknown'}`; },
     cookieName: '__Host-airbnb-guest-book-csrf',
     cookieOptions: {
         sameSite: 'strict',
@@ -111,7 +112,7 @@ const { invalidCsrfTokenError, generateCsrfToken, doubleCsrfProtection } = (0, c
     },
     size: 64,
     ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
-    getTokenFromRequest: (req) => {
+    getCsrfTokenFromRequest: (req) => {
         var _a;
         const headerToken = req.headers['x-csrf-token'];
         if (typeof headerToken === 'string') {
@@ -184,6 +185,23 @@ const upload = (0, multer_1.default)({
         fileSize: 5 * 1024 * 1024 // 5MB
     }
 });
+const runBackup = () => {
+    const backupDir = path_1.default.join(__dirname, '../backups');
+    if (!fs_1.default.existsSync(backupDir)) {
+        fs_1.default.mkdirSync(backupDir, { recursive: true });
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `backup-${timestamp}.gz`;
+    const filepath = path_1.default.join(backupDir, filename);
+    (0, child_process_1.execFile)('mongodump', [`--uri=${mongoUri}`, `--archive=${filepath}`, '--gzip'], (error) => {
+        if (error) {
+            console.error('Backup failed:', error);
+        }
+        else {
+            console.log(`Backup created successfully: ${filepath}`);
+        }
+    });
+};
 // Auth Middleware
 const authMiddleware = (req, res, next) => {
     var _a;
@@ -306,12 +324,11 @@ app.post('/api/login', async (req, res) => {
     }
 });
 app.get('/api/csrf-token', (req, res) => {
-    res.json({ csrfToken: req.csrfToken() });
+    res.json({ csrfToken: generateCsrfToken(req, res) });
 });
 app.post('/api/backup', authMiddleware, async (req, res, next) => {
     try {
-        const { backup } = await Promise.resolve().then(() => __importStar(require('../scripts/backup')));
-        backup();
+        runBackup();
         res.json({ message: 'Backup initiated successfully' });
     }
     catch (err) {
