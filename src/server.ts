@@ -494,57 +494,58 @@ app.post('/api/restore/:filename', authMiddleware, async (req: AuthRequest, res:
       }
     });
 
-    app.get('/api/analytics/dashboard', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
-      try {
-        const entries = await Entry.find().sort('-date');
-        const totalStays = entries.length;
-        const totalGuests = totalStays;
-        const repeatGuests = entries.filter((entry) => entry.isRepeatGuest).length;
-        const repeatGuestRate = totalStays > 0 ? Number(((repeatGuests / totalStays) * 100).toFixed(2)) : 0;
-        const totalBookedDays = entries.reduce((sum, entry) => sum + getStayDuration(entry), 0);
-        const occupancyByMonth = buildOccupancyByMonth(entries);
+  } catch (err) {
+    next(err);
+  }
+});
 
-        res.json({
-          totalStays,
-          totalGuests,
-          repeatGuestRate,
-          totalBookedDays,
-          occupancyByMonth
-        });
-      } catch (err) {
-        next(err);
+app.get('/api/analytics/dashboard', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const entries = await Entry.find().sort('-date');
+    const totalStays = entries.length;
+    const totalGuests = totalStays;
+    const repeatGuests = entries.filter((entry) => entry.isRepeatGuest).length;
+    const repeatGuestRate = totalStays > 0 ? Number(((repeatGuests / totalStays) * 100).toFixed(2)) : 0;
+    const totalBookedDays = entries.reduce((sum, entry) => sum + getStayDuration(entry), 0);
+    const occupancyByMonth = buildOccupancyByMonth(entries);
+
+    res.json({
+      totalStays,
+      totalGuests,
+      repeatGuestRate,
+      totalBookedDays,
+      occupancyByMonth
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/analytics/statistics', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const entries = await Entry.find().sort('-date');
+    const totalEntries = entries.length;
+    const totalBookedDays = entries.reduce((sum, entry) => sum + getStayDuration(entry), 0);
+    const averageStayDuration = totalEntries > 0 ? Number((totalBookedDays / totalEntries).toFixed(2)) : 0;
+
+    const cityCounts = new Map<string, number>();
+    entries.forEach((entry) => {
+      const normalizedCity = entry.from.trim();
+      if (!normalizedCity) {
+        return;
       }
+      cityCounts.set(normalizedCity, (cityCounts.get(normalizedCity) || 0) + 1);
     });
 
-    app.get('/api/analytics/statistics', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
-      try {
-        const entries = await Entry.find().sort('-date');
-        const totalEntries = entries.length;
-        const totalBookedDays = entries.reduce((sum, entry) => sum + getStayDuration(entry), 0);
-        const averageStayDuration = totalEntries > 0 ? Number((totalBookedDays / totalEntries).toFixed(2)) : 0;
+    const mostCommonOriginCities = Array.from(cityCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([city, count]) => ({ city, count }));
 
-        const cityCounts = new Map<string, number>();
-        entries.forEach((entry) => {
-          const normalizedCity = entry.from.trim();
-          if (!normalizedCity) {
-            return;
-          }
-          cityCounts.set(normalizedCity, (cityCounts.get(normalizedCity) || 0) + 1);
-        });
-
-        const mostCommonOriginCities = Array.from(cityCounts.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5)
-          .map(([city, count]) => ({ city, count }));
-
-        res.json({
-          averageStayDuration,
-          totalBookedDays,
-          mostCommonOriginCities
-        });
-      } catch (err) {
-        next(err);
-      }
+    res.json({
+      averageStayDuration,
+      totalBookedDays,
+      mostCommonOriginCities
     });
   } catch (err) {
     next(err);

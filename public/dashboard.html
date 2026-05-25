@@ -77,7 +77,7 @@
             }
 
             const response = await fetch(url, {
-                headers: { Authorization: `****** }
+                headers: { Authorization: 'JWT ' + token }
             });
 
             if (!response.ok) {

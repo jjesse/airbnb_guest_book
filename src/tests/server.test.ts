@@ -131,7 +131,7 @@ describe('Guest Book API', () => {
     const token = await getAuthToken();
     const response = await request(app)
       .get('/api/analytics/dashboard')
-      .set('Authorization', `******;
+      .set('Authorization', `JWT ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.totalStays).toBe(2);
@@ -183,7 +183,7 @@ describe('Guest Book API', () => {
     const token = await getAuthToken();
     const response = await request(app)
       .get('/api/analytics/statistics')
-      .set('Authorization', `******;
+      .set('Authorization', `JWT ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.averageStayDuration).toBe(3.33);
@@ -208,7 +208,7 @@ describe('Guest Book API', () => {
     const token = await getAuthToken();
     const response = await request(app)
       .get('/api/entries/export?format=csv')
-      .set('Authorization', `******;
+      .set('Authorization', `JWT ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/csv');
