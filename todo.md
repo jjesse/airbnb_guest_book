@@ -7,11 +7,16 @@ Last updated: 2026-05-25
 
 ## 🔴 Critical Bugs / Blockers
 
-- [ ] **Undefined `storage` variable in `src/server.ts`** — `multer` is configured with `const upload = multer({ storage, ... })` but `storage` is never defined in the TypeScript file (unlike the legacy `server.js`). This will crash on startup.
-- [ ] **`scripts/backup.js` vs `scripts/backup.ts` mismatch** — `package.json` runs `ts-node scripts/backup.ts` but only `backup.js` exists. Backup script will fail.
-- [ ] **Duplicate server files** — Both `server.js` (root, CommonJS) and `src/server.ts` (TypeScript) exist. `package.json` starts `dist/server.js` (compiled from TypeScript), but the legacy root `server.js` causes confusion and diverged behavior (different auth strategy, missing check-in/out fields, `/submit` route vs `/api/entries`). Root `server.js` should be removed.
-- [ ] **Auth middleware inconsistency** — `middleware/auth.js` reads token from `req.cookies.token`, but `src/server.ts`'s inline auth middleware reads it from `Authorization: Bearer` header. These need to be unified.
-- [ ] **`package.json` version is `0.1.0`** but CHANGELOG reflects `0.6.4`. Version should be updated.
+- [x] **Undefined `storage` variable in `src/server.ts`** — Added `multer.diskStorage` configuration; `upload` now has a properly defined storage backend.
+- [x] **`scripts/backup.js` vs `scripts/backup.ts` mismatch** — Created `scripts/backup.ts`; `npm run backup` now works.
+- [x] **Duplicate server files** — Removed legacy root `server.js`; `src/server.ts` is the single source of truth. Updated `package.json` `main` to `dist/server.js`.
+- [x] **Auth middleware inconsistency** — Removed `middleware/auth.js` (cookie-based); `src/server.ts` uses a single consistent inline auth middleware (******
+- [x] **`package.json` version is `0.1.0`** — Updated to `0.6.4` to match CHANGELOG.
+- [x] **Missing required fields in `POST /api/entries`** — Route now accepts `checkIn`, `checkOut`, and `isRepeatGuest` as required by the schema (saves were failing silently).
+- [x] **Misplaced error handler** — Removed the anonymous 4-argument error handler placed before routes (it could never catch route errors). Consolidated into single `errorHandler` after routes.
+- [x] **Missing routes in TypeScript server** — Added search, photo upload, CSRF token, and backup/restore endpoints (previously only existed in the deleted `server.js`).
+- [x] **JWT secret silent fallback** — Added startup validation: throws in production if `JWT_SECRET` is unset, warns in development.
+- [x] **`dotenv` missing from `dependencies`** — Added `dotenv` to `dependencies`; also added `@types/multer`, `@types/cookie-parser`, `@types/bcryptjs` to `devDependencies`.
 
 ---
 
