@@ -1,17 +1,40 @@
 import express, { Request, Response, NextFunction } from 'express';
 import xss from 'xss';
+import bcrypt from 'bcryptjs';
 import bodyParser from 'body-parser';
 import mongoose, { Document, Schema } from 'mongoose';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import csrf from 'csurf';
+import { doubleCsrf } from 'csrf-csrf';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+import { execFile } from 'child_process';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import multer from 'multer';
 
 dotenv.config();
+
+// Fail fast if required secrets are missing in production
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET environment variable is required in production');
+  }
+  console.warn('WARNING: JWT_SECRET is not set. Using insecure default — set JWT_SECRET in production.');
+}
+const JWT_SECRET = jwtSecret || 'insecure-dev-secret-do-not-use-in-production';
+
+const csrfSecret = process.env.CSRF_SECRET;
+if (!csrfSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CSRF_SECRET environment variable is required in production');
+  }
+  console.warn('WARNING: CSRF_SECRET is not set. Using insecure default — set CSRF_SECRET in production.');
+}
+const CSRF_SECRET = csrfSecret || 'insecure-dev-csrf-secret-do-not-use-in-production';
+const isTest = process.env.NODE_ENV === 'test';
 
 // Types
 interface IEntry extends Document {
@@ -32,9 +55,11 @@ interface AuthRequest extends Request {
 
 // MongoDB Setup
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/guestbook';
-mongoose.connect(mongoUri)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+if (!isTest) {
+  mongoose.connect(mongoUri)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error('MongoDB connection error:', err));
+}
 
 // Schema Definition
 const entrySchema = new Schema<IEntry>({
@@ -64,6 +89,37 @@ const Entry = mongoose.model<IEntry>('Entry', entrySchema);
 const app = express();
 const port = process.env.PORT || 3000;
 
+const {
+  invalidCsrfTokenError,
+  generateCsrfToken,
+  doubleCsrfProtection
+} = doubleCsrf({
+  getSecret: () => CSRF_SECRET,
+  getSessionIdentifier: (req: Request) => `${req.ip}:${req.get('user-agent') ?? 'unknown'}`,
+  cookieName: '__Host-airbnb-guest-book-csrf',
+  cookieOptions: {
+    sameSite: 'strict',
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true
+  },
+  size: 64,
+  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+  getCsrfTokenFromRequest: (req: Request) => {
+    const headerToken = req.headers['x-csrf-token'];
+
+    if (typeof headerToken === 'string') {
+      return headerToken;
+    }
+
+    if (Array.isArray(headerToken)) {
+      return headerToken[0];
+    }
+
+    return typeof req.body?._csrf === 'string' ? req.body._csrf : '';
+  }
+});
+
 // Middleware
 app.use(cookieParser());
 app.use(bodyParser.json());
@@ -77,8 +133,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-const csrfProtection = csrf({ cookie: true });
-app.use(csrfProtection);
+app.use(doubleCsrfProtection);
 
 // Enhanced Input Sanitization
 const sanitizeInput = (req: Request, res: Response, next: NextFunction): void => {
@@ -112,6 +167,14 @@ const sanitizeInput = (req: Request, res: Response, next: NextFunction): void =>
 
 app.use(sanitizeInput);
 
+// File upload storage configuration
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, '../public/uploads'),
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+
 // File upload validation
 const fileFilter = (req: Request, file: Express.Multer.File, cb: Function) => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
@@ -130,6 +193,26 @@ const upload = multer({
   }
 });
 
+const runBackup = (): void => {
+  const backupDir = path.join(__dirname, '../backups');
+
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `backup-${timestamp}.gz`;
+  const filepath = path.join(backupDir, filename);
+
+  execFile('mongodump', [`--uri=${mongoUri}`, `--archive=${filepath}`, '--gzip'], (error) => {
+    if (error) {
+      console.error('Backup failed:', error);
+    } else {
+      console.log(`Backup created successfully: ${filepath}`);
+    }
+  });
+};
+
 // Auth Middleware
 const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction): void => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -140,7 +223,7 @@ const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction): vo
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded as { username: string };
     next();
   } catch (err) {
@@ -150,24 +233,23 @@ const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction): vo
 
 // Error Handler
 const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction): void => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something broke!' });
-};
+  if (err === invalidCsrfTokenError || err.message === invalidCsrfTokenError.message) {
+    res.status(403).json({ error: 'Invalid CSRF token' });
+    return;
+  }
 
-// Enhanced error handling
-app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error(error.stack);
-  res.status(500).json({ 
+  console.error(err.stack);
+  res.status(500).json({
     error: 'Something went wrong!',
-    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
-});
+};
 
 // Routes
 app.post('/api/entries', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, from, comments, photo } = req.body;
-    const entry = new Entry({ name, from, comments, photo });
+    const { name, from, comments, photo, checkIn, checkOut, isRepeatGuest } = req.body;
+    const entry = new Entry({ name, from, comments, photo, checkIn, checkOut, isRepeatGuest });
     await entry.save();
     res.status(201).json(entry);
   } catch (err) {
@@ -184,6 +266,36 @@ app.get('/api/entries', async (req: Request, res: Response, next: NextFunction) 
   }
 });
 
+// Search must be registered before the /:id routes to avoid being shadowed
+app.get('/api/entries/search', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { query, startDate, endDate } = req.query as Record<string, string>;
+    const filter: Record<string, unknown> = {};
+
+    if (query) {
+      // Escape regex special characters to prevent regex injection
+      const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter['$or'] = [
+        { name: new RegExp(escapedQuery, 'i') },
+        { from: new RegExp(escapedQuery, 'i') },
+        { comments: new RegExp(escapedQuery, 'i') }
+      ];
+    }
+
+    if (startDate || endDate) {
+      const dateFilter: Record<string, Date> = {};
+      if (startDate) dateFilter['$gte'] = new Date(startDate);
+      if (endDate) dateFilter['$lte'] = new Date(endDate);
+      filter['date'] = dateFilter;
+    }
+
+    const entries = await Entry.find(filter).sort('-date');
+    res.json(entries);
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.delete('/api/entries/:id', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await Entry.findByIdAndDelete(req.params.id);
@@ -193,7 +305,26 @@ app.delete('/api/entries/:id', authMiddleware, async (req: AuthRequest, res: Res
   }
 });
 
-app.post('/api/login', (req: Request, res: Response) => {
+app.post('/api/entries/:id/photo', upload.single('photo'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
+    }
+    const entry = await Entry.findById(req.params.id);
+    if (!entry) {
+      res.status(404).json({ error: 'Entry not found' });
+      return;
+    }
+    entry.photo = `/uploads/${req.file.filename}`;
+    await entry.save();
+    res.json({ message: 'Photo uploaded successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
   
   if (!process.env.HOST_PASSWORD) {
@@ -201,10 +332,10 @@ app.post('/api/login', (req: Request, res: Response) => {
     return;
   }
 
-  if (username === 'host' && password === process.env.HOST_PASSWORD) {
+  if (username === 'host' && await bcrypt.compare(password, process.env.HOST_PASSWORD)) {
     const token = jwt.sign(
       { username }, 
-      process.env.JWT_SECRET || 'secret',
+      JWT_SECRET,
       { expiresIn: '1h' }
     );
     res.json({ token });
@@ -213,12 +344,57 @@ app.post('/api/login', (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/csrf-token', (req: Request, res: Response) => {
+  res.json({ csrfToken: generateCsrfToken(req, res) });
+});
+
+app.post('/api/backup', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    runBackup();
+    res.json({ message: 'Backup initiated successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/restore/:filename', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    // Sanitize filename: allow only alphanumeric, hyphens, underscores, and dots
+    const filename = req.params.filename.replace(/[^a-zA-Z0-9._-]/g, '');
+    if (!filename || filename !== req.params.filename) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const filepath = path.join(__dirname, '../backups', filename);
+    if (!fs.existsSync(filepath)) {
+      res.status(404).json({ error: 'Backup file not found' });
+      return;
+    }
+
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/guestbook';
+
+    // Use execFile to avoid shell injection — arguments are passed directly to the process
+    execFile('mongorestore', [`--uri=${mongoUri}`, `--archive=${filepath}`, '--gzip'], (error) => {
+      if (error) {
+        next(error);
+      } else {
+        res.json({ message: 'Restore completed successfully' });
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Error handling middleware
 app.use(errorHandler);
 
 // Start server
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+  });
+}
 
-export { app };
+export { app, Entry };

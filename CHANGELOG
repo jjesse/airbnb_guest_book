@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.5] - 2026-05-25
+
+### Security
+
+- Replaced deprecated `csurf` with maintained `csrf-csrf` protection
+- Restored bcrypt-based host password verification
+- Updated `nodemailer` to a non-vulnerable version
+
+### Changed
+
+- Added test coverage for CSRF-protected requests with mocked persistence
+- Bumped package version to `0.6.5`
+
 ## [0.6.4] - 2025-04-11
 
 ### Added
