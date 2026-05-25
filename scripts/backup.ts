@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 
@@ -14,9 +14,9 @@ export const backup = (): void => {
   const filepath = path.join(BACKUP_DIR, filename);
 
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/guestbook';
-  const cmd = `mongodump --uri=${mongoUri} --archive=${filepath} --gzip`;
 
-  exec(cmd, (error) => {
+  // Use execFile to avoid shell injection — arguments are passed directly to the process
+  execFile('mongodump', [`--uri=${mongoUri}`, `--archive=${filepath}`, '--gzip'], (error) => {
     if (error) {
       console.error('Backup failed:', error);
       return;

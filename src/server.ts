@@ -8,7 +8,7 @@ import csrf from 'csurf';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import multer from 'multer';
@@ -205,10 +205,12 @@ app.get('/api/entries/search', async (req: Request, res: Response, next: NextFun
     const filter: Record<string, unknown> = {};
 
     if (query) {
+      // Escape regex special characters to prevent regex injection
+      const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter['$or'] = [
-        { name: new RegExp(query, 'i') },
-        { from: new RegExp(query, 'i') },
-        { comments: new RegExp(query, 'i') }
+        { name: new RegExp(escapedQuery, 'i') },
+        { from: new RegExp(escapedQuery, 'i') },
+        { comments: new RegExp(escapedQuery, 'i') }
       ];
     }
 
@@ -304,14 +306,14 @@ app.post('/api/restore/:filename', authMiddleware, async (req: AuthRequest, res:
     }
 
     const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/guestbook';
-    const cmd = `mongorestore --uri=${mongoUri} --archive=${filepath} --gzip`;
 
-    exec(cmd, (error) => {
+    // Use execFile to avoid shell injection — arguments are passed directly to the process
+    execFile('mongorestore', [`--uri=${mongoUri}`, `--archive=${filepath}`, '--gzip'], (error) => {
       if (error) {
         next(error);
-        return;
+      } else {
+        res.json({ message: 'Restore completed successfully' });
       }
-      res.json({ message: 'Restore completed successfully' });
     });
   } catch (err) {
     next(err);
