@@ -31,6 +31,26 @@
 - **Auth**: Required
 - **Response**: 204 No Content
 
+### Export Entries
+
+- **GET** `/api/entries/export?format=json|csv`
+- **Auth**: Required
+- **Response**: Downloadable JSON or CSV file of all entries
+
+## Analytics & Reporting
+
+### Dashboard Metrics
+
+- **GET** `/api/analytics/dashboard`
+- **Auth**: Required
+- **Response**: `{ totalStays, totalGuests, repeatGuestRate, totalBookedDays, occupancyByMonth }`
+
+### Entry Statistics
+
+- **GET** `/api/analytics/statistics`
+- **Auth**: Required
+- **Response**: `{ averageStayDuration, totalBookedDays, mostCommonOriginCities }`
+
 ## Backup & Restore
 
 ### Create Backup

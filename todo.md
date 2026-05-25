@@ -86,10 +86,10 @@ Last updated: 2026-05-25
 
 ## 🟡 Analytics & Reporting
 
-- [ ] Build a host dashboard showing total stays, total guests, repeat guest rate, and occupancy by month
-- [ ] Calculate total booked days from check-in/check-out data (groundwork already in schema)
-- [ ] Add CSV/JSON export of guest entries for the host
-- [ ] Add entry statistics endpoint (average stay duration, most common origin cities)
+- [x] Build a host dashboard showing total stays, total guests, repeat guest rate, and occupancy by month
+- [x] Calculate total booked days from check-in/check-out data (groundwork already in schema)
+- [x] Add CSV/JSON export of guest entries for the host
+- [x] Add entry statistics endpoint (average stay duration, most common origin cities)
 
 ---
 

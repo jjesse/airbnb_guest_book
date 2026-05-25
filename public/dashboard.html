@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Host Analytics Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 20px 0; }
+        .metric-card { border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; }
+        .metric-card h3 { margin: 0 0 8px; font-size: 0.95rem; }
+        .metric-card p { margin: 0; font-size: 1.4rem; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th, td { border: 1px solid var(--border-color); padding: 8px; text-align: left; }
+        .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Host Analytics Dashboard</h1>
+    <p>Provide a host JWT token to load analytics and export entries.</p>
+
+    <div class="toolbar">
+        <input type="password" id="authToken" placeholder="Host JWT token">
+        <button type="button" onclick="loadDashboard()">Load Dashboard</button>
+        <button type="button" onclick="exportEntries('json')">Export JSON</button>
+        <button type="button" onclick="exportEntries('csv')">Export CSV</button>
+    </div>
+
+    <div class="error-message" id="errorMessage"></div>
+
+    <div class="dashboard-grid">
+        <div class="metric-card"><h3>Total stays</h3><p id="totalStays">-</p></div>
+        <div class="metric-card"><h3>Total guests</h3><p id="totalGuests">-</p></div>
+        <div class="metric-card"><h3>Repeat guest rate</h3><p id="repeatGuestRate">-</p></div>
+        <div class="metric-card"><h3>Total booked days</h3><p id="totalBookedDays">-</p></div>
+        <div class="metric-card"><h3>Avg stay duration</h3><p id="averageStayDuration">-</p></div>
+    </div>
+
+    <h2>Occupancy by month</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Month</th>
+                <th>Booked Days</th>
+                <th>Days In Month</th>
+                <th>Occupancy Rate</th>
+            </tr>
+        </thead>
+        <tbody id="occupancyBody"></tbody>
+    </table>
+
+    <h2>Top origin cities</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>City</th>
+                <th>Visits</th>
+            </tr>
+        </thead>
+        <tbody id="citiesBody"></tbody>
+    </table>
+
+    <p><a href="/entries.html">View entries</a> · <a href="/">Add new entry</a></p>
+
+    <script>
+        const getToken = () => document.getElementById('authToken').value.trim();
+
+        function showError(message = '') {
+            const error = document.getElementById('errorMessage');
+            error.textContent = message;
+            error.style.display = message ? 'block' : 'none';
+        }
+
+        async function fetchWithAuth(url) {
+            const token = getToken();
+            if (!token) {
+                throw new Error('Please provide a host token.');
+            }
+
+            const response = await fetch(url, {
+                headers: { Authorization: 'JWT ' + token }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Request failed: ${response.status}`);
+            }
+
+            return response;
+        }
+
+        function fillTableRows(elementId, rows, mapRow) {
+            const body = document.getElementById(elementId);
+            body.innerHTML = rows.map(mapRow).join('');
+        }
+
+        async function loadDashboard() {
+            showError();
+            try {
+                const [dashboardRes, statsRes] = await Promise.all([
+                    fetchWithAuth('/api/analytics/dashboard'),
+                    fetchWithAuth('/api/analytics/statistics')
+                ]);
+                const dashboard = await dashboardRes.json();
+                const stats = await statsRes.json();
+
+                document.getElementById('totalStays').textContent = dashboard.totalStays;
+                document.getElementById('totalGuests').textContent = dashboard.totalGuests;
+                document.getElementById('repeatGuestRate').textContent = `${dashboard.repeatGuestRate}%`;
+                document.getElementById('totalBookedDays').textContent = dashboard.totalBookedDays;
+                document.getElementById('averageStayDuration').textContent = `${stats.averageStayDuration} days`;
+
+                fillTableRows('occupancyBody', dashboard.occupancyByMonth, (row) => `
+                    <tr>
+                        <td>${row.month}</td>
+                        <td>${row.bookedDays}</td>
+                        <td>${row.daysInMonth}</td>
+                        <td>${row.occupancyRate}%</td>
+                    </tr>
+                `);
+
+                fillTableRows('citiesBody', stats.mostCommonOriginCities, (row) => `
+                    <tr>
+                        <td>${row.city}</td>
+                        <td>${row.count}</td>
+                    </tr>
+                `);
+            } catch (error) {
+                showError(error.message || 'Failed to load dashboard');
+            }
+        }
+
+        async function exportEntries(format) {
+            showError();
+            try {
+                const response = await fetchWithAuth(`/api/entries/export?format=${format}`);
+                const blob = await response.blob();
+                const contentDisposition = response.headers.get('content-disposition') || '';
+                const match = contentDisposition.match(/filename="(.+)"/);
+                const filename = (match && match[1]) || `guest-entries.${format}`;
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                showError(error.message || 'Failed to export entries');
+            }
+        }
+    </script>
+</body>
+</html>
