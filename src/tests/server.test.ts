@@ -1,30 +1,49 @@
 import bcrypt from 'bcryptjs';
 import type { Express } from 'express';
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
 
 jest.setTimeout(30000);
 
 describe('Guest Book API', () => {
   let app: Express;
-  let mongoServer: MongoMemoryServer;
+  let Entry: {
+    prototype: {
+      save: () => Promise<unknown>;
+    };
+    find: (filter?: unknown) => {
+      sort: (sortValue: string) => Promise<unknown[]>;
+    };
+  };
+  let entries: Array<Record<string, unknown>> = [];
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.JWT_SECRET = 'test-jwt-secret';
     process.env.CSRF_SECRET = 'test-csrf-secret';
     process.env.HOST_PASSWORD = await bcrypt.hash('test-password', 10);
+    process.env.MONGODB_URI = 'mongodb://example.invalid/test';
 
-    mongoServer = await MongoMemoryServer.create();
-    process.env.MONGODB_URI = mongoServer.getUri();
-
-    ({ app } = await import('../server'));
+    const serverModule = await import('../server');
+    app = serverModule.app;
+    Entry = serverModule.Entry;
   });
 
-  afterAll(async () => {
-    await mongoose.connection.close();
-    await mongoServer.stop();
+  beforeEach(() => {
+    entries = [];
+
+    jest.spyOn(Entry.prototype, 'save').mockImplementation(async function mockSave(this: { toObject: () => Record<string, unknown> }) {
+      const savedEntry = this.toObject();
+      entries.push(savedEntry);
+      return this;
+    });
+
+    jest.spyOn(Entry, 'find').mockImplementation(() => ({
+      sort: jest.fn().mockResolvedValue([...entries].reverse())
+    }) as never);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   const getCsrfContext = async () => {

@@ -10,7 +10,7 @@
 
 ### Changed
 
-- Added test coverage for CSRF-protected requests using an in-memory MongoDB instance
+- Added test coverage for CSRF-protected requests with mocked persistence
 - Bumped package version to `0.6.5`
 
 ## [0.6.4] - 2025-04-11

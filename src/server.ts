@@ -34,6 +34,7 @@ if (!csrfSecret) {
   console.warn('WARNING: CSRF_SECRET is not set. Using insecure default — set CSRF_SECRET in production.');
 }
 const CSRF_SECRET = csrfSecret || 'insecure-dev-csrf-secret-do-not-use-in-production';
+const isTest = process.env.NODE_ENV === 'test';
 
 // Types
 interface IEntry extends Document {
@@ -54,9 +55,11 @@ interface AuthRequest extends Request {
 
 // MongoDB Setup
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/guestbook';
-mongoose.connect(mongoUri)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+if (!isTest) {
+  mongoose.connect(mongoUri)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error('MongoDB connection error:', err));
+}
 
 // Schema Definition
 const entrySchema = new Schema<IEntry>({
@@ -394,4 +397,4 @@ if (require.main === module) {
   });
 }
 
-export { app };
+export { app, Entry };
